@@ -1,0 +1,8 @@
+Energy Demand Forecasting Model Report
+=====================================
+
+Generated on: 2025-05-02 12:57:04.329234
+Data from: demanddata_2024.csv
+Training time: 0:01:56.954957
+
+Model Architecture:

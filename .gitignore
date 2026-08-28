@@ -1,0 +1,23 @@
+# Data files (too large for GitHub)
+*.csv
+*.h5
+*.pkl
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (never commit these)
+*.env
+ngrok_token*
