@@ -6,8 +6,7 @@ Final Year Project — B.Sc. (Hons) Computer Science, London South Bank Universi
 
 ## What this project is about
 
-[WRITE THIS IN YOUR OWN WORDS — why did you choose this topic, what problem does it solve, why does electricity demand forecasting matter]
-
+Electricity demand is constantly shifting. A heatwave pushes air conditioning usage up, a major concert fills an arena, a bank holiday empties offices. These fluctuations are hard to predict but critical to manage. If the grid undersupplies, there are blackouts. If it oversupplies, energy is wasted. I chose this project because I wanted to work on a real, live problem with real consequences, not a textbook dataset. The National Grid publishes half-hourly demand data for the whole of England and Wales, which gave me 17,568 genuine records to work with. Beyond the immediate forecasting problem, there is a bigger picture too: as the population grows and the push toward renewable energy accelerates, accurate demand prediction becomes even more important. Renewables like solar and wind are intermittent. You cannot just burn more gas when demand spikes. Knowing what demand will be in advance is what makes a renewable grid actually manageable
 ---
 
 ## Dataset
