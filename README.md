@@ -33,14 +33,12 @@ Finally I built a Streamlit dashboard that simulates real-time IoT sensor data s
 
 ## Models compared
 
-| Model | Notes |
-|-------|-------|
-| Ridge Regression | Baseline linear model |
-| Lasso Regression | Linear model with feature selection |
-| Random Forest | 100 trees, non-linear patterns |
-| LSTM (best model) | Two-layer LSTM, 50 units each, 20% dropout |
-
-[ADD YOUR ACTUAL MAE AND RMSE NUMBERS HERE when you run main.py]
+| Model | MAE | RMSE | Performance Notes |
+| :--- | :--- | :--- | :--- |
+| **Random Forest** | 662.60 MW | 1,395.60 MW | Lowest overall raw error metrics across the test partition space. |
+| **LSTM Network** | 1,018.33 MW | 1,827.61 MW | Captured sequential temporal shapes beautifully. Early-stopped at epoch 24. |
+| **Ridge Regression** | 928.59 MW | 1,657.67 MW | Linear regularized baseline framework. |
+| **Lasso Regression** | 928.60 MW | 1,657.71 MW | Linear framework with automated feature sparsity boundaries. |
 
 ---
 
