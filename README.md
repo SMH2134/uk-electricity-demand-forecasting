@@ -20,7 +20,13 @@ Final Year Project — B.Sc. (Hons) Computer Science, London South Bank Universi
 
 ## What I built
 
-[WRITE THIS IN YOUR OWN WORDS — describe the pipeline you built, what steps you went through, what decisions you made]
+I started with raw half-hourly settlement data from National Grid covering the full year 2024. The first task was just making it usable. I constructed proper timestamps from the settlement date and period columns, selected the relevant demand columns, and capped outliers at the 99th percentile. For anomaly detection I used Isolation Forest, an unsupervised method that flagged 176 unusual demand readings across the year without needing labelled examples of what an anomaly looks like.
+
+For feature engineering I extracted the hour of day, day of week, and month from the timestamps, then added lag features capturing demand from one hour and one day prior. These lag features ended up being the most important inputs to the LSTM because electricity demand follows strong daily and weekly cycles.
+
+I trained four models to compare: Ridge Regression and Lasso as linear baselines, Random Forest as a non-linear benchmark, and a two-layer LSTM as the main model. The LSTM trained in around two minutes on AWS EC2 with the data stored on S3, using early stopping and learning rate reduction to find the optimal stopping point rather than guessing the number of epochs upfront. It achieved the lowest error across all four models.
+
+Finally I built a Streamlit dashboard that simulates real-time IoT sensor data streaming, letting users input live sensor readings for demand and temperature and see the values plotted as they come in. The full pipeline including the trained LSTM model was deployed on AWS EC2 with data stored on S3 for the duration of the project. The EC2 instance was shut down after submission to avoid ongoing costs
 
 ---
 
@@ -81,7 +87,7 @@ Note: You need to download demanddata_2024.csv from National Grid's public data 
 
 ## What I learned
 
-[WRITE THIS IN YOUR OWN WORDS — what surprised you, what was harder than expected, what would you do differently]
+The most important thing I learned was that a model can look fine in training and be completely broken in production. My Streamlit dashboard was running and the predictions were technically being generated, but no matter what parameters I changed on the sliders, the output was always stuck around 240W, nowhere near the real 20,000 to 45,000 MW range of UK demand. It took a long time to figure out that the problem was in how I was scaling the data. I had one scaler doing the job of two. The features and the target were being processed together, which meant the inverse transformation was producing garbage. Once I split them into two independent MinMaxScalers, the predictions jumped from an MAE of 22,456 MW down to 1,022 MW. The model had not changed at all. The bug was in the pipeline, not the network. That is something no textbook really prepares you for.
 
 ---
 
