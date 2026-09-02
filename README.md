@@ -12,10 +12,11 @@ Electricity demand is constantly shifting. A heatwave pushes air conditioning us
 
 ## Dataset
 
-- Source: National Grid demanddata_2024 (publicly available half-hourly settlement data)
+- Source: Historic Demand Data, published by the National Energy System Operator (NESO, formerly National Grid ESO), via their data portal at [neso.energy](https://www.neso.energy)
 - 17,568 records across 22 features
 - Time range: January 2024 to December 2024
 - Key columns used: ENGLAND_WALES_DEMAND, Net Demand (ND), Total System Demand (TSD)
+- Licence: used under the NESO Open Data Licence v1.0, which is based on the Open Government Licence v3.0. Attribution: "Contains information provided by NESO, licensed under the NESO Open Data Licence v1.0."
 
 ---
 
@@ -80,7 +81,7 @@ python src/main.py
 streamlit run app.py
 ```
 
-Note: You need to download demanddata_2024.csv from National Grid's public data portal and place it in the root folder before running.
+`demanddata_2024.csv` is included in the repository, so these steps work as-is after cloning. Run them from the repository root.
 
 ---
 
