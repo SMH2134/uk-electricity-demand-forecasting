@@ -1,6 +1,6 @@
 # UK Electricity Demand Forecasting and Anomaly Detection
 
-Final Year Project — B.Sc. (Hons) Computer Science, London South Bank University (2024-2025)
+Final Year Project, B.Sc. (Hons) Computer Science, London South Bank University (2024-2025)
 
 ---
 
@@ -107,4 +107,4 @@ Four issues were found and fixed after the first version of this README.
 
 ## Author
 
-Syed Muhammad Hassan — B.Sc. (Hons) Computer Science, First Class, London South Bank University
+Syed Muhammad Hassan, B.Sc. (Hons) Computer Science, First Class, London South Bank University
