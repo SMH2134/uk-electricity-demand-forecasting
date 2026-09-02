@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # headless: write PNG files, never open a window
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split
@@ -9,15 +11,23 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 import os
+import random
 import joblib
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
-# Model artifact output directory (repo_root/models)
+# Reproducibility — seed every RNG the pipeline touches
+random.seed(42)
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Output directories (repo_root/models, repo_root/plots)
 MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
+PLOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "plots")
 os.makedirs(MODELS_DIR, exist_ok=True)
+os.makedirs(PLOTS_DIR, exist_ok=True)
 
 # Load Dataset
 df = pd.read_csv("demanddata_2024.csv")
@@ -38,6 +48,22 @@ print(f"Isolation Forest flagged {len(anomalies)} anomalies out of {len(df_clean
 
 # Persist the fitted detector immediately
 joblib.dump(iso_forest, os.path.join(MODELS_DIR, "isolation_forest.pkl"))
+
+# Anomaly detection chart — demand series with the flagged points highlighted
+fig, ax = plt.subplots(figsize=(14, 5))
+ax.plot(df_cleaned["DATETIME"], df_cleaned["ENGLAND_WALES_DEMAND"],
+        lw=0.5, color="#3b6fb0", label="England & Wales demand")
+ax.scatter(anomalies["DATETIME"], anomalies["ENGLAND_WALES_DEMAND"],
+           color="#d1495b", s=18, zorder=5,
+           label=f"Isolation Forest anomalies (n={len(anomalies)})")
+ax.set_title(f"Isolation Forest anomaly detection — contamination=1%, "
+             f"{len(anomalies)} of {len(df_cleaned)} points flagged")
+ax.set_xlabel("Date")
+ax.set_ylabel("Demand (MW)")
+ax.legend(loc="upper right")
+fig.tight_layout()
+fig.savefig(os.path.join(PLOTS_DIR, "anomaly_detection.png"), dpi=120)
+plt.close(fig)
 
 # Feature Engineering
 df_cleaned["MONTH"] = df_cleaned["DATETIME"].dt.month
@@ -78,16 +104,23 @@ def evaluate_model(y_true, y_pred, model_name):
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     print(f"{model_name}: MAE = {mae:.2f}, RMSE = {rmse:.2f}")
 
+# Persistence baseline — naive forecast: each prediction is the previous half-hourly reading.
+# Evaluated on the same chronological test partition as the models below.
+persistence_preds = df_cleaned[target].shift(1).loc[y_test.index]
+evaluate_model(y_test, persistence_preds, "Persistence (naive t-1)")
+
 evaluate_model(y_test, ridge_preds, "Ridge Regression")
 evaluate_model(y_test, lasso_preds, "Lasso Regression")
 evaluate_model(y_test, rf_preds, "Random Forest")
 
 # LSTM Model for Time-Series Forecasting
-# The raw lag features and demand target span ~5,000-70,000 MW. Feeding those
-# magnitudes straight into the network keeps the MSE gradient enormous and the
-# model collapses to a flat mean prediction (audit D3/D8). Scale both the inputs
-# and the target into [0, 1] first, then invert the predictions back to MW.
-lstm_feature_cols = ["LAG_1H", "LAG_1D"]
+# Feature parity with the baselines: the LSTM trains on the same 5 features
+# (HOUR, WEEKDAY, MONTH, LAG_1H, LAG_1D) so the model comparison is like-for-like.
+# The features and target span ~0-70,000 MW; feeding those magnitudes straight
+# into the network keeps the MSE gradient enormous and the model collapses to a
+# flat mean prediction (audit D3/D8). Scale both the inputs and the target into
+# [0, 1] first, then invert the predictions back to MW.
+lstm_feature_cols = features
 X_lstm_raw = df_cleaned[lstm_feature_cols].values
 y_lstm_raw = df_cleaned[target].values.reshape(-1, 1)
 
@@ -117,16 +150,23 @@ lstm_model = Sequential([
 ])
 lstm_model.compile(optimizer='adam', loss='mse')
 
-lstm_callbacks = [
-    EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-    ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-5),
-]
-lstm_model.fit(
+early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-5)
+history = lstm_model.fit(
     X_train_lstm, y_train_scaled_lstm,
     epochs=50, batch_size=32,
     validation_data=(X_test_lstm, y_test_scaled_lstm),
-    callbacks=lstm_callbacks,
+    callbacks=[early_stopping, reduce_lr],
 )
+
+epochs_run = len(history.history["loss"])
+if early_stopping.stopped_epoch:
+    best_epoch = getattr(early_stopping, "best_epoch", None)
+    best_txt = f"{best_epoch + 1}" if best_epoch is not None else "n/a"
+    print(f"LSTM early-stopped after epoch {early_stopping.stopped_epoch + 1} "
+          f"(best weights restored from epoch {best_txt})")
+else:
+    print(f"LSTM ran the full {epochs_run} epochs without early stopping")
 
 # Predict in scaled space, then invert both sides back to megawatts to score
 lstm_preds_scaled = lstm_model.predict(X_test_lstm)
@@ -154,3 +194,36 @@ model_metadata = {
 }
 joblib.dump(model_metadata, os.path.join(MODELS_DIR, "preprocessing_metadata.pkl"))
 print(f"Saved model artifacts to {os.path.abspath(MODELS_DIR)}")
+
+# LSTM training-history chart
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.plot(range(1, epochs_run + 1), history.history["loss"], label="train loss")
+ax.plot(range(1, epochs_run + 1), history.history["val_loss"], label="validation loss")
+if early_stopping.stopped_epoch:
+    ax.axvline(early_stopping.best_epoch + 1, color="grey", ls="--", lw=1,
+               label=f"best epoch ({early_stopping.best_epoch + 1})")
+ax.set_title("LSTM training history")
+ax.set_xlabel("Epoch")
+ax.set_ylabel("Loss (MSE on MinMax-scaled target)")
+ax.legend()
+fig.tight_layout()
+fig.savefig(os.path.join(PLOTS_DIR, "training_history.png"), dpi=120)
+plt.close(fig)
+
+# Actual-vs-predicted chart over the held-out test partition
+test_dt = df_cleaned.loc[y_test.index, "DATETIME"].values
+fig, ax = plt.subplots(figsize=(14, 5))
+ax.plot(test_dt, y_test.values, color="black", lw=1.0, label="Actual")
+ax.plot(test_dt, rf_preds, color="#2a9d8f", lw=0.9, alpha=0.9,
+        label=f"Random Forest (MAE {mean_absolute_error(y_test, rf_preds):.0f} MW)")
+ax.plot(test_dt, lstm_preds, color="#e76f51", lw=0.9, alpha=0.9,
+        label=f"LSTM (MAE {mean_absolute_error(y_test_lstm_mw, lstm_preds):.0f} MW)")
+ax.set_title("Test partition: actual vs predicted demand")
+ax.set_xlabel("Date")
+ax.set_ylabel("Demand (MW)")
+ax.legend(loc="upper right")
+fig.tight_layout()
+fig.savefig(os.path.join(PLOTS_DIR, "predictions_full.png"), dpi=120)
+plt.close(fig)
+
+print(f"Saved plots to {os.path.abspath(PLOTS_DIR)}")

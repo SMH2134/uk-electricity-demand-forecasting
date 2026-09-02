@@ -21,13 +21,13 @@ Electricity demand is constantly shifting. A heatwave pushes air conditioning us
 
 ## What I built
 
-I started with raw half-hourly settlement data from National Grid covering the full year 2024. The first task was just making it usable. I constructed proper timestamps from the settlement date and period columns, selected the relevant demand columns, and capped outliers at the 99th percentile. For anomaly detection I used Isolation Forest, an unsupervised method that flagged 176 unusual demand readings across the year without needing labelled examples of what an anomaly looks like.
+I started with raw half-hourly settlement data from National Grid covering the full year 2024. The first task was just making it usable. I constructed proper timestamps from the settlement date and period columns and selected the relevant demand columns. For anomaly detection I used Isolation Forest, an unsupervised method, run with the contamination parameter set to 1%. It flagged 174 points across the year without needing labelled examples of what an anomaly looks like.
 
 For feature engineering I extracted the hour of day, day of week, and month from the timestamps, then added lag features capturing demand from one hour and one day prior. These lag features ended up being the most important inputs to the LSTM because electricity demand follows strong daily and weekly cycles.
 
-I trained four models to compare: Ridge Regression and Lasso as linear baselines, Random Forest as a non-linear benchmark, and a two-layer LSTM as the main model. The LSTM trained in around two minutes on AWS EC2 with the data stored on S3, using early stopping and learning rate reduction to find the optimal stopping point rather than guessing the number of epochs upfront. Random Forest achieved the lowest raw error on the test set (MAE 662 MW, RMSE 1,395 MW). The LSTM achieved MAE 1,022 MW but is architecturally better suited for time series because it learns sequential dependencies that static models cannot capture.
+I compared five models: a persistence baseline (predict the previous half-hourly value), Ridge Regression and Lasso as linear baselines, Random Forest as a non-linear benchmark, and a two-layer LSTM as the main model. The LSTM uses early stopping and learning rate reduction to settle on the stopping epoch automatically rather than guessing it upfront. Random Forest achieved the lowest raw error on the test set (MAE 551 MW, RMSE 729 MW). The LSTM achieved MAE 903 MW. On the real data only Random Forest beat the persistence baseline of 702 MW; Ridge, Lasso and the LSTM all scored worse than simply predicting the previous half-hourly reading. Half-hourly demand is highly autocorrelated, so the one-step lag feature already carries most of the predictable signal and the heavier models add little on top of it.
 
-Finally I built a Streamlit dashboard that simulates real-time IoT sensor data streaming, letting users input live sensor readings for demand and temperature and see the values plotted as they come in. The full pipeline including the trained LSTM model was deployed on AWS EC2 with data stored on S3 for the duration of the project. The EC2 instance was shut down after submission to avoid ongoing costs
+Finally I built a Streamlit dashboard (`app.py`) that loads the saved models and lets users enter feature values to get a demand forecast from the LSTM and an anomaly check from the Isolation Forest; if the model files are missing it falls back to a placeholder view instead of crashing. For the original university submission the full pipeline, including the trained LSTM, was hosted on an AWS EC2 instance with the dataset on S3, and the instance was shut down after submission. The repository as it stands has no AWS code and runs entirely locally.
 
 ---
 
@@ -35,35 +35,35 @@ Finally I built a Streamlit dashboard that simulates real-time IoT sensor data s
 
 | Model | MAE | RMSE | Performance Notes |
 | :--- | :--- | :--- | :--- |
-| **Random Forest** | 662.60 MW | 1,395.60 MW | Lowest overall raw error metrics across the test partition space. |
-| **LSTM Network** | 1,022.21 MW | 1,813.01 MW | Captured sequential temporal shapes beautifully. Early-stopped at epoch 18. |
-| **Ridge Regression** | 928.59 MW | 1,657.67 MW | Linear regularized baseline framework. |
-| **Lasso Regression** | 928.60 MW | 1,657.71 MW | Linear framework with automated feature sparsity boundaries. |
+| **Random Forest** | 551.24 MW | 729.18 MW | Lowest error of the five; the only model that beats the naive persistence baseline. |
+| **Persistence (naive t-1)** | 702.15 MW | 922.41 MW | Baseline: prediction equals the previous half-hourly reading. Beaten only by Random Forest. |
+| **LSTM Network** | 902.56 MW | 1,179.06 MW | Higher error than the naive persistence baseline despite feature parity with the other models. Early-stopped at epoch 25 (best weights from epoch 20). |
+| **Ridge Regression** | 1,053.28 MW | 1,346.79 MW | Linear regularised baseline. Highest error alongside Lasso; does not beat naive persistence. |
+| **Lasso Regression** | 1,053.31 MW | 1,346.83 MW | Linear baseline with L1 feature selection. Effectively tied with Ridge; does not beat naive persistence. |
 
 ---
 
 ## Results
 
-![Predictions vs Actual](plots/predictions_full.png)
+All three charts below are generated by `src/main.py` from the current run on the real dataset.
 
-![Training History](plots/training_history.png)
+![Test partition: actual vs predicted demand](plots/predictions_full.png)
 
-![Anomaly Detection](plots/anomaly_detection.png)
+![LSTM training history](plots/training_history.png)
 
-![Demand Patterns](plots/demand_patterns.png)
-
-![Hourly Distribution](plots/hourly_distribution.png)
+![Isolation Forest anomaly detection](plots/anomaly_detection.png)
 
 ---
 
 ## Tech stack
 
 - Python, Pandas, NumPy
-- scikit-learn (Ridge, Lasso, Random Forest)
+- scikit-learn (Ridge, Lasso, Random Forest, Isolation Forest)
 - TensorFlow/Keras (LSTM)
 - Matplotlib, Seaborn
 - Streamlit (interactive dashboard)
-- AWS EC2 and S3 (training and deployment)
+
+The repository runs entirely locally. The original university submission additionally used AWS EC2 for training and S3 for dataset storage; that infrastructure is not part of this repo.
 
 ---
 
@@ -86,7 +86,21 @@ Note: You need to download demanddata_2024.csv from National Grid's public data 
 
 ## What I learned
 
-The most important thing I learned was that a model can look fine in training and be completely broken in production. My Streamlit dashboard was running and the predictions were technically being generated, but no matter what parameters I changed on the sliders, the output was always stuck around 240W, nowhere near the real 20,000 to 45,000 MW range of UK demand. It took a long time to figure out that the problem was in how I was scaling the data. I had one scaler doing the job of two. The features and the target were being processed together, which meant the inverse transformation was producing garbage. Once I split them into two independent MinMaxScalers, the predictions jumped from an MAE of 22,456 MW down to 1,022 MW. The model had not changed at all. The bug was in the pipeline, not the network. That is something no textbook really prepares you for.
+The most important thing I learned was that a model can look fine in training and be completely broken in production. My Streamlit dashboard was running and the predictions were technically being generated, but no matter what parameters I changed on the sliders, the output was pinned at a small fraction of the real 20,000 to 45,000 MW range of UK demand, regardless of input. It took a long time to figure out that the problem was in how I was scaling the data. I had one scaler doing the job of two. The features and the target were being processed together, which meant the inverse transformation was producing garbage. Once I split them into two independent MinMaxScalers, the predictions moved back into the correct range and tracked the input. The model had not changed at all. The bug was in the pipeline, not the network. That is something no textbook really prepares you for.
+
+---
+
+## Corrections and revisions
+
+Four issues were found and fixed after the first version of this README.
+
+**Single-scaler bug.** The LSTM pipeline originally used one `MinMaxScaler` fitted on the input features and the target together. The target was therefore scaled against the feature distribution, so the inverse transform returned the wrong magnitudes and the forecast came out effectively flat. Splitting it into two scalers, one fitted on the five input features and one fitted on the target alone, fixed it.
+
+**Unequal feature sets.** The first comparison trained Ridge, Lasso and Random Forest on five features (hour, weekday, month, and the one-hour and one-day lags) but gave the LSTM only the two lag features. This was corrected before the real-data run, so the LSTM now uses the same five. At feature parity the LSTM still does not beat the persistence baseline on the real data.
+
+**Persistence baseline.** No naive baseline was included at first. Adding one, which predicts the previous half-hourly value (MAE 702 MW), showed that of the four trained models only Random Forest (MAE 551 MW) beats it; Ridge, Lasso and the LSTM all score worse than the naive forecast.
+
+**Synthetic data.** An earlier version of this README reported metrics from a synthetic stand-in dataset used while the real file was unavailable. Those figures were replaced once the pipeline was rerun on the real National Grid demanddata_2024.csv (17,568 rows, 22 columns).
 
 ---
 

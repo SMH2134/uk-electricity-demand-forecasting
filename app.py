@@ -156,15 +156,25 @@ def render_live(artifacts, errors):
     lag_1h_periods = metadata.get("lag_1h_periods", 2)
     lag_1d_periods = metadata.get("lag_1d_periods", 48)
 
+    lstm_features = metadata.get(
+        "lstm_features", ["HOUR", "WEEKDAY", "MONTH", "LAG_1H", "LAG_1D"]
+    )
+    n_lstm_features = len(lstm_features)
+
     # --- Forecast panel -----------------------------------------------------
     st.subheader("Next-period demand forecast (LSTM)")
     st.caption(
-        f"The LSTM consumes two lag features: demand {lag_1h_periods} half-hour "
-        f"periods ago (LAG_1H) and {lag_1d_periods} periods ago / 24h (LAG_1D)."
+        f"The LSTM consumes the same {n_lstm_features} features as the baseline "
+        f"models: {', '.join(lstm_features)}. LAG_1H is demand {lag_1h_periods} "
+        f"half-hour periods ago; LAG_1D is {lag_1d_periods} periods / 24h ago."
     )
-    c1, c2 = st.columns(2)
-    lag_1h = c1.number_input("LAG_1H — demand ~1 hour ago (MW)", 0.0, 80000.0, 30000.0, 250.0)
-    lag_1d = c2.number_input("LAG_1D — demand ~24 hours ago (MW)", 0.0, 80000.0, 31000.0, 250.0)
+    c1, c2, c3 = st.columns(3)
+    hour = c1.number_input("HOUR (0-23)", 0, 23, 18, 1)
+    weekday = c2.number_input("WEEKDAY (0=Mon .. 6=Sun)", 0, 6, 2, 1)
+    month = c3.number_input("MONTH (1-12)", 1, 12, 1, 1)
+    c4, c5 = st.columns(2)
+    lag_1h = c4.number_input("LAG_1H — demand ~1 hour ago (MW)", 0.0, 80000.0, 30000.0, 250.0)
+    lag_1d = c5.number_input("LAG_1D — demand ~24 hours ago (MW)", 0.0, 80000.0, 31000.0, 250.0)
 
     feature_scaler = artifacts["lstm_feature_scaler"]
     target_scaler = artifacts["lstm_target_scaler"]
@@ -177,10 +187,11 @@ def render_live(artifacts, errors):
         )
     elif st.button("Forecast next period", type="primary"):
         try:
-            # Scale the lag inputs the same way training did, predict in [0, 1]
-            # space, then invert the prediction back to megawatts.
-            x_raw = np.array([[lag_1h, lag_1d]], dtype="float64")
-            x_scaled = feature_scaler.transform(x_raw).reshape((1, 2, 1))
+            # Feature order must match training: HOUR, WEEKDAY, MONTH, LAG_1H, LAG_1D.
+            # Scale the inputs the same way training did, predict in [0, 1] space,
+            # then invert the prediction back to megawatts.
+            x_raw = np.array([[hour, weekday, month, lag_1h, lag_1d]], dtype="float64")
+            x_scaled = feature_scaler.transform(x_raw).reshape((1, n_lstm_features, 1))
             yhat_scaled = lstm.predict(x_scaled, verbose=0)
             yhat = float(target_scaler.inverse_transform(yhat_scaled).flatten()[0])
             st.metric("Forecast demand (next half-hour)", f"{yhat:,.0f} MW")
